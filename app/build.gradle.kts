@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId = "io.github.karino2.magnasketch"
-        minSdk = 28
+        minSdk = 26
         targetSdk = 37
         versionCode = 6
         versionName = "6"

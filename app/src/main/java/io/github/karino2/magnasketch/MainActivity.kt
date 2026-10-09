@@ -1,14 +1,13 @@
 package io.github.karino2.magnasketch
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.PointF
 import android.graphics.Rect
 import android.os.Bundle
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.view.SurfaceHolder
@@ -17,109 +16,59 @@ import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ShareCompat
 import androidx.core.content.FileProvider
-import androidx.core.graphics.createBitmap
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import com.onyx.android.sdk.data.note.TouchPoint
-import com.onyx.android.sdk.pen.RawInputCallback
-import com.onyx.android.sdk.pen.TouchHelper
-import com.onyx.android.sdk.pen.data.TouchPointList
+import io.github.karino2.supernote.BitmapBackend
+import io.github.karino2.supernote.SupernotePenEngine
 import java.io.File
-import kotlin.math.abs
 
 
 class MainActivity : AppCompatActivity() {
 
     val surface: SurfaceView by lazy { findViewById(R.id.canvas)}
 
-    private val penWidth = 5f
-    val penPaint = Paint().apply {
-        isAntiAlias = true
-        // isDither = true
-        color = 0xFF000000.toInt()
-        style = Paint.Style.STROKE
-        // strokeJoin = Paint.Join.ROUND
-        // strokeCap = Paint.Cap.ROUND
-        strokeWidth = penWidth
-    }
-
     val bmpPaint = Paint(Paint.DITHER_FLAG)
 
-    val bitmap by lazy {
-        val bmp = createBitmap(surface.width, surface.height)
-        val bcanvas = Canvas(bmp)
-        try {
-            val sbmp = openFileInput(fileName).use {
-                BitmapFactory.decodeStream(it)
-            }
-            bcanvas.drawBitmap(sbmp, 0f, 0f, bmpPaint)
-        }catch(_: java.io.FileNotFoundException)
-        {
-            bcanvas.drawColor(Color.WHITE)
+    val backend by lazy {
+        BitmapBackend(surface.width, surface.height).apply {
+            try {
+                val sbmp = openFileInput(fileName).use {
+                    BitmapFactory.decodeStream(it)
+                }
+                sbmp?.let {
+                    this.canvas.drawBitmap(it, 0f, 0f, bmpPaint)
+                }
+            }catch(_: java.io.FileNotFoundException)
+            {}
         }
-        bmp
     }
 
-    val bmpCanvas by lazy { Canvas(bitmap) }
+    val penEngine by lazy {
+        val pe = SupernotePenEngine(surface, SupernotePenEngine.Listener { b, r-> onHardwareStrokeFinished(b, r) })
+        surface.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyRawDrawingSettings() }
+        surface.holder.addCallback(surfaceCallback)
+        pe
+    }
 
     var isDirty = false
 
-    fun drawScribbleToBitmap(points: List<TouchPoint>) {
-        if (points.isEmpty()) return
-        isDirty = true
-        val path = Path()
-        val prePoint = PointF(points[0].x, points[0].y)
-        path.moveTo(prePoint.x, prePoint.y)
-        for (point in points) {
-            // skip strange jump point.
-            if (abs(prePoint.y - point.y) >= 30)
-                continue
-            path.quadTo(prePoint.x, prePoint.y, point.x, point.y)
-            prePoint.x = point.x
-            prePoint.y = point.y
+    fun onHardwareStrokeFinished(bitmap: Bitmap, dirty: Rect) {
+        // val logical = RectF(dirty)
+
+        Log.d("MagnaSketch", "dirty: ${dirty}")
+
+        backend.canvas.drawBitmap(bitmap, dirty, dirty, null)
+        /*
+        surface.holder?.let { holder->
+            holder.lockCanvas()?.let { scanv ->
+                scanv.drawBitmap(bitmap, dirty, dirty, null)
+                holder.unlockCanvasAndPost(scanv)
+            }
         }
-        bmpCanvas.drawPath(path, penPaint)
+         */
+        penEngine.clearTransient(dirty)
     }
 
-    private val inputCallback : RawInputCallback = object: RawInputCallback() {
-        override fun onBeginRawDrawing(
-            p0: Boolean,
-            p1: TouchPoint?
-        ) {
-        }
-
-        override fun onEndRawDrawing(
-            p0: Boolean,
-            p1: TouchPoint?
-        ) {
-        }
-
-        override fun onRawDrawingTouchPointMoveReceived(p0: TouchPoint?) {
-
-        }
-
-        override fun onRawDrawingTouchPointListReceived(plist: TouchPointList) {
-            drawScribbleToBitmap(plist.points)
-        }
-
-        override fun onBeginRawErasing(
-            p0: Boolean,
-            p1: TouchPoint?
-        ) {
-        }
-
-        override fun onEndRawErasing(
-            p0: Boolean,
-            p1: TouchPoint?
-        ) {
-        }
-
-        override fun onRawErasingTouchPointMoveReceived(p0: TouchPoint?) {
-        }
-
-        override fun onRawErasingTouchPointListReceived(p0: TouchPointList?) {
-        }
-    }
 
     private var lastOpenedLimit: Rect? = null
 
@@ -132,23 +81,22 @@ class MainActivity : AppCompatActivity() {
             ensureCloseRawRendering()
         }
 
-        if (!touchHelper.isRawDrawingRenderEnabled) {
-            clearSurfaceView(bitmap)
-            touchHelper.setStrokeWidth(penWidth)
-                .setStrokeColor(Color.BLACK)
-                .setLimitRect(limit, emptyList<Rect>())
-                .setStrokeStyle(TouchHelper.STROKE_STYLE_PENCIL)
-                .openRawDrawing()
-            touchHelper.setRawDrawingEnabled(true)
-            touchHelper.isRawDrawingRenderEnabled = true
+        if (!penEngine.isEnabled) {
+            clearSurfaceView(backend.bitmap)
+            penEngine.isEnabled = true
+            penEngine.setTool(SupernotePenEngine.TOOL_PENCIL, Color.BLACK)
+            penEngine.setBitmapVisible(true)
+            penEngine.setWritableRect(limit)
             lastOpenedLimit = Rect(limit)
+
+            penEngine.loadBitmap(backend.bitmap.copy(Bitmap.Config.ARGB_8888, true))
         } else {
-            touchHelper.setLimitRect(limit, emptyList<Rect>())
+            penEngine.setWritableRect(limit)
         }
     }
 
     private fun isRawRenderingBecomesStale(limit: Rect): Boolean =
-        touchHelper.isRawDrawingRenderEnabled && (lastOpenedLimit == null || limit.width() != lastOpenedLimit?.width() || limit.height() != lastOpenedLimit?.height())
+        penEngine.isEnabled && (lastOpenedLimit == null || limit.width() != lastOpenedLimit?.width() || limit.height() != lastOpenedLimit?.height())
 
     private fun surfaceVisibleRect(): Rect {
         val limit = Rect()
@@ -157,19 +105,12 @@ class MainActivity : AppCompatActivity() {
         return limit
     }
 
-    private val surfaceCallback = object : SurfaceHolder.Callback {
+    private val surfaceCallback : SurfaceHolder.Callback = object : SurfaceHolder.Callback {
         override fun surfaceCreated(holder: SurfaceHolder) {
             applyRawDrawingSettings()
         }
         override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, height: Int) {}
         override fun surfaceDestroyed(holder: SurfaceHolder) {}
-    }
-
-    val touchHelper by lazy {
-        val helper = TouchHelper.create(surface, inputCallback)
-        surface.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyRawDrawingSettings() }
-        surface.holder.addCallback(surfaceCallback)
-        helper
     }
 
     fun clearSurfaceView(bmp: Bitmap? = null): Boolean {
@@ -183,6 +124,7 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.let {
@@ -202,7 +144,11 @@ class MainActivity : AppCompatActivity() {
             )
             insets
         }
-        touchHelper
+        surface.setOnTouchListener { view, event ->
+            penEngine.forwardEvent(event)
+            true
+        }
+        penEngine
     }
 
     override fun onResume() {
@@ -214,7 +160,7 @@ class MainActivity : AppCompatActivity() {
         surface.holder?.let { holder->
             holder.lockCanvas()?.let { lockCanvas ->
                 lockCanvas.drawColor(Color.WHITE)
-                lockCanvas.drawBitmap(bitmap, 0f, 0f, bmpPaint)
+                lockCanvas.drawBitmap(backend.bitmap, 0f, 0f, bmpPaint)
                 holder.unlockCanvasAndPost(lockCanvas)
             }
         }
@@ -234,14 +180,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         ensureCloseRawRendering()
+        penEngine.close()
         super.onDestroy()
     }
 
     private fun ensureCloseRawRendering() {
-        if (touchHelper.isRawDrawingRenderEnabled) {
-            touchHelper.setRawDrawingEnabled(false)
-            touchHelper.isRawDrawingRenderEnabled = false
-            touchHelper.closeRawDrawing()
+        if (penEngine.isEnabled) {
+            penEngine.isEnabled = false
         }
     }
 
@@ -261,21 +206,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun doSave() {
         openFileOutput(fileName, MODE_PRIVATE).use {
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            backend.bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
             it.flush()
         }
     }
 
     fun withTempNoRawRendering(f: ()->Unit) {
-        val isRawRendering = touchHelper.isRawDrawingRenderEnabled
+        val isRawRendering = penEngine.isEnabled
         if (isRawRendering)
         {
-            touchHelper.setRawDrawingEnabled(false)
+            penEngine.isEnabled = false
         }
         f()
         if (isRawRendering)
         {
-            touchHelper.setRawDrawingEnabled(true)
+            penEngine.isEnabled = true
         }
     }
 
@@ -284,7 +229,8 @@ class MainActivity : AppCompatActivity() {
             R.id.action_clear -> {
                 withTempNoRawRendering {
                     clearSurfaceView()
-                    bmpCanvas.drawColor(Color.WHITE)
+                    backend.clear()
+                    penEngine.clear()
                     doSave()
                 }
                 isDirty = false
