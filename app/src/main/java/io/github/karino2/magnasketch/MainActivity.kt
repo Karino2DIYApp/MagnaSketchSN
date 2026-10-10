@@ -55,17 +55,13 @@ class MainActivity : AppCompatActivity() {
     fun onHardwareStrokeFinished(bitmap: Bitmap, dirty: Rect) {
         // val logical = RectF(dirty)
 
-        Log.d("MagnaSketch", "dirty: ${dirty}")
-
         backend.canvas.drawBitmap(bitmap, dirty, dirty, null)
-        /*
         surface.holder?.let { holder->
             holder.lockCanvas()?.let { scanv ->
-                scanv.drawBitmap(bitmap, dirty, dirty, null)
+                scanv.drawBitmap(backend.bitmap, 0f, 0f, bmpPaint)
                 holder.unlockCanvasAndPost(scanv)
             }
         }
-         */
         penEngine.clearTransient(dirty)
     }
 
