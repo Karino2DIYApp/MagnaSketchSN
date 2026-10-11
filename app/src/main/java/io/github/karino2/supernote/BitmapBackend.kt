@@ -18,7 +18,12 @@ class BitmapBackend(iniWidth: Int, iniHeight: Int) {
     val canvas : Canvas
         get() = _canvas
 
-    fun clear() { canvas.drawColor(Color.WHITE)}
+
+    fun drawBitmap(newbmp : Bitmap) = canvas.drawBitmap(newbmp, 0f, 0f, null)
+    fun clear() {
+        bitmap.eraseColor(Color.WHITE)
+        canvas.drawColor(Color.WHITE)
+    }
 
     fun resize(newWidth: Int, newHeight: Int) {
         if (_bitmap.width == newWidth && _bitmap.height == newHeight) return

@@ -3,6 +3,7 @@ package io.github.karino2.supernote;
 
 import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.util.Log;
@@ -36,7 +37,7 @@ public final class SupernotePenEngine {
 
     private final View host;
     private final Listener listener;
-    private final Object controller;
+    private Object controller;
     @SuppressWarnings("FieldCanBeLocal")
     private final Object drawEventProxy;
     private final Object pendingLock = new Object();
@@ -51,12 +52,42 @@ public final class SupernotePenEngine {
         }
     }
 
+    private void listMethod() {
+        // Method[] methods = controller.getClass().getDeclaredMethods();
+        // Method[] methods = host.getClass().getDeclaredMethods();
+        Method[] methods = View.class.getDeclaredMethods();
+        for (Method method : methods) {
+            StringBuilder params = new StringBuilder();
+            for (Class<?> paramType : method.getParameterTypes()) {
+                if (params.length() > 0) {
+                    params.append(", ");
+                }
+                params.append(paramType.getSimpleName());
+            }
+
+            Log.d(TAG, "Method: " + method.getName()
+                    + "(" + params + ")"
+                    + " : " + method.getReturnType().getSimpleName());
+        }
+    }
+
+    Object getController() throws ReflectiveOperationException {
+        Method getter = View.class.getMethod("getPWInterFace");
+        return getter.invoke(host);
+    }
+
     public SupernotePenEngine(View host, Listener listener) throws ReflectiveOperationException {
         this.host = host;
         this.listener = listener;
-        Method getter = View.class.getMethod("getPWInterFace");
-        controller = getter.invoke(host);
+        controller = getController();
         if (controller == null) throw new IllegalStateException("Moteur PW indisponible");
+
+        // listMethod();
+        /*
+        Method mt = View.class.getMethod("setEinkUpdateMode", int.class, int.class);
+        Log.d(TAG, "Method: " + mt.getName());
+
+         */
 
         Class<?> callbackType = Class.forName("android.view.EinkPWInterface$PWDrawEventWithPoint");
         drawEventProxy = Proxy.newProxyInstance(host.getClass().getClassLoader(),
@@ -95,7 +126,7 @@ public final class SupernotePenEngine {
         // Keep stylus events available to the host View. Some Chauvet builds do
         // not activate the raw PW input route for sideloaded applications.
         invoke("enableTouchDispatch", new Class<?>[]{int.class}, 1);
-        invoke("setPWEnabled", new Class<?>[]{boolean.class}, true);
+        setEnabled(true);
     }
 
     public void setTool(int tool, int color) {
@@ -114,14 +145,42 @@ public final class SupernotePenEngine {
         } catch (ReflectiveOperationException ignored) { }
     }
 
+    private boolean _enabled = false;
+
     public void setEnabled(boolean enabled) {
+        _enabled = enabled;
         try { invoke("setPWEnabled", new Class<?>[]{boolean.class}, enabled); }
-        catch (ReflectiveOperationException ignored) { }
+        catch (ReflectiveOperationException e) {
+            Log.d(TAG, "setEnabled: Exp:" + e);
+
+        }
     }
 
     public boolean isEnabled() {
-        try { return Boolean.TRUE.equals(invoke("getPWEnabled", new Class<?>[0])); }
-        catch (ReflectiveOperationException ignored) { return false; }
+        // I can't find how to get setPWEnable result. just store field and return it.
+        // This might be different from device state.
+        return _enabled;
+
+        /*
+                try {
+            // always false
+            Log.d(TAG, "isEnabled2: " + View.class.getMethod("isEinkModeSet").invoke(host));
+        }catch(ReflectiveOperationException e) {
+            Log.d(TAG, "isEnable: Exp: " + e);
+        }
+
+         */
+
+        /*
+        try {
+            Log.d(TAG, "isEnabled2: " + invoke("isWriteNoneDraw", new Class<?>[0]));
+            // Log.d(TAG, "isEnabled2-2: " + invoke("isCurrentWriting", new Class<?>[0]));
+            return Boolean.TRUE.equals(invoke("getPWEnabled", new Class<?>[0])); }
+        catch (ReflectiveOperationException e) {
+            Log.d(TAG, "isEnable: Exp: " + e);
+            return false;
+        }
+         */
     }
 
     public void setBitmapVisible(boolean visible) {
@@ -171,19 +230,41 @@ public final class SupernotePenEngine {
     public void clearTransient(Rect rect) {
         try {
             invoke("clearContent", new Class<?>[]{Rect.class, boolean.class, boolean.class},
-                    rect == null ? null : new Rect(rect), true, true);
-        } catch (ReflectiveOperationException ignored) { }
+                    rect == null ? null : new Rect(rect),
+                    true, true);
+                    // false, false);
+                    // false, true);
+                    // true, false);
+        } catch (ReflectiveOperationException e) { Log.d(TAG, "clearTransient: Ex: " + e); }
     }
 
     public void clear() {
         try {
-            invoke("clearContent", new Class<?>[]{Rect.class, boolean.class, boolean.class},
-                    null, true, true);
-        } catch (ReflectiveOperationException ignored) { }
+            invoke("clearContent", new Class<?>[]{Rect.class, boolean.class, boolean.class, boolean.class},
+                    null, true, true, true);
+        } catch (ReflectiveOperationException e) {
+            Log.d(TAG, "fail to call: " + e.toString());
+        }
     }
 
     public Bitmap getBitmap() {
         try { return (Bitmap) invoke("getPureWriteBitmap", new Class<?>[0]); }
+        catch (ReflectiveOperationException ignored) { return null; }
+    }
+
+    public Bitmap getBitmapRef() {
+        try { return (Bitmap) invoke("getPureWriteBitmapRef", new Class<?>[0]); }
+        catch (ReflectiveOperationException ignored) { return null; }
+    }
+
+    // allocNewPWBitmap
+    public Bitmap allocNewPWBitmap() {
+        try { return (Bitmap) invoke("allocNewPWBitmap", new Class<?>[0]); }
+        catch (ReflectiveOperationException ignored) { return null; }
+    }
+
+    public Canvas getPWCanvas() {
+        try { return (Canvas) invoke("getPwCanvas", new Class<?>[0]); }
         catch (ReflectiveOperationException ignored) { return null; }
     }
 
@@ -207,6 +288,13 @@ public final class SupernotePenEngine {
         try {
             invoke("sendBackEvent", new Class<?>[]{MotionEvent.class, boolean.class}, event, false);
         } catch (ReflectiveOperationException ignored) { }
+    }
+
+    public void reassignCallback() {
+        try {
+            Class<?> callbackType = Class.forName("android.view.EinkPWInterface$PWDrawEventWithPoint");
+            invoke("setDrawEventListener", new Class<?>[]{callbackType}, (Object) drawEventProxy);
+        } catch (ReflectiveOperationException e) { Log.d(TAG, "reassign Ex:" + e); }
     }
 
     public void close() {

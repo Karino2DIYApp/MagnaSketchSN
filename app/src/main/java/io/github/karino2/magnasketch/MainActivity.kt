@@ -3,11 +3,13 @@ package io.github.karino2.magnasketch
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.os.Bundle
-import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
 import android.view.SurfaceHolder
@@ -19,106 +21,27 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.karino2.supernote.BitmapBackend
+import io.github.karino2.supernote.SupernotePenCanvas
 import io.github.karino2.supernote.SupernotePenEngine
 import java.io.File
+import java.io.FileNotFoundException
 
 
 class MainActivity : AppCompatActivity() {
 
-    val surface: SurfaceView by lazy { findViewById(R.id.canvas)}
+    val penCanvas by lazy { findViewById<SupernotePenCanvas>(R.id.canvas)}
 
-    val bmpPaint = Paint(Paint.DITHER_FLAG)
+    val backend :BitmapBackend
+        get() = penCanvas.backend
 
-    val backend by lazy {
-        BitmapBackend(surface.width, surface.height).apply {
-            try {
-                val sbmp = openFileInput(fileName).use {
-                    BitmapFactory.decodeStream(it)
-                }
-                sbmp?.let {
-                    this.canvas.drawBitmap(it, 0f, 0f, bmpPaint)
-                }
-            }catch(_: java.io.FileNotFoundException)
-            {}
-        }
-    }
-
-    val penEngine by lazy {
-        val pe = SupernotePenEngine(surface, SupernotePenEngine.Listener { b, r-> onHardwareStrokeFinished(b, r) })
-        surface.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyRawDrawingSettings() }
-        surface.holder.addCallback(surfaceCallback)
-        pe
-    }
-
-    var isDirty = false
-
-    fun onHardwareStrokeFinished(bitmap: Bitmap, dirty: Rect) {
-        // val logical = RectF(dirty)
-
-        backend.canvas.drawBitmap(bitmap, dirty, dirty, null)
-        surface.holder?.let { holder->
-            holder.lockCanvas()?.let { scanv ->
-                scanv.drawBitmap(backend.bitmap, 0f, 0f, bmpPaint)
-                holder.unlockCanvasAndPost(scanv)
-            }
-        }
-        penEngine.clearTransient(dirty)
-    }
-
-
-    private var lastOpenedLimit: Rect? = null
-
-    private fun applyRawDrawingSettings() {
-        val limit = surfaceVisibleRect()
-        if (!surface.holder.surface.isValid || limit.width() <= 0 || limit.height() <= 0) return
-
-        // サイズが変わっていたら、バッファ不整合を防ぐため開き直す（黒画面対策の核心）
-        if (isRawRenderingBecomesStale(limit)) {
-            ensureCloseRawRendering()
+    var isDirty: Boolean
+        get() = penCanvas.isBackendDirty
+        set(value) {
+            penCanvas.isBackendDirty = value
         }
 
-        if (!penEngine.isEnabled) {
-            clearSurfaceView(backend.bitmap)
-            penEngine.isEnabled = true
-            penEngine.setTool(SupernotePenEngine.TOOL_PENCIL, Color.BLACK)
-            penEngine.setBitmapVisible(true)
-            penEngine.setWritableRect(limit)
-            lastOpenedLimit = Rect(limit)
+    val handler = Handler(Looper.myLooper()!!)
 
-            penEngine.loadBitmap(backend.bitmap.copy(Bitmap.Config.ARGB_8888, true))
-        } else {
-            penEngine.setWritableRect(limit)
-        }
-    }
-
-    private fun isRawRenderingBecomesStale(limit: Rect): Boolean =
-        penEngine.isEnabled && (lastOpenedLimit == null || limit.width() != lastOpenedLimit?.width() || limit.height() != lastOpenedLimit?.height())
-
-    private fun surfaceVisibleRect(): Rect {
-        val limit = Rect()
-        surface.getLocalVisibleRect(limit)
-
-        return limit
-    }
-
-    private val surfaceCallback : SurfaceHolder.Callback = object : SurfaceHolder.Callback {
-        override fun surfaceCreated(holder: SurfaceHolder) {
-            applyRawDrawingSettings()
-        }
-        override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, height: Int) {}
-        override fun surfaceDestroyed(holder: SurfaceHolder) {}
-    }
-
-    fun clearSurfaceView(bmp: Bitmap? = null): Boolean {
-        val holder = surface.holder ?: return false
-        val canvas = holder.lockCanvas() ?: return false
-        canvas.drawColor(Color.WHITE)
-        bmp?.let {
-            canvas.drawBitmap(it, 0f, 0f, bmpPaint)
-        }
-        holder.unlockCanvasAndPost(canvas)
-        return true
-    }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,50 +63,46 @@ class MainActivity : AppCompatActivity() {
             )
             insets
         }
-        surface.setOnTouchListener { view, event ->
-            penEngine.forwardEvent(event)
-            true
+
+        handler.post {
+            // サイズが決まった後に呼びたいのだが、面倒なのでhandler.postで。
+            try
+            {
+                openFileInput(fileName).use {
+                    BitmapFactory.decodeStream(it)
+                }?.let {
+                    penCanvas.backend.drawBitmap(it)
+                    penCanvas.invalidate()
+                }
+            }catch(ignore: FileNotFoundException) {
+            }
+
+            penCanvas.applyRawDrawingSettings()
         }
-        penEngine
+
     }
 
     override fun onResume() {
         super.onResume()
-        applyRawDrawingSettings()
-    }
-
-    private fun updateBmpToSurface() {
-        surface.holder?.let { holder->
-            holder.lockCanvas()?.let { lockCanvas ->
-                lockCanvas.drawColor(Color.WHITE)
-                lockCanvas.drawBitmap(backend.bitmap, 0f, 0f, bmpPaint)
-                holder.unlockCanvasAndPost(lockCanvas)
-            }
-        }
+        penCanvas.applyRawDrawingSettings()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) applyRawDrawingSettings()
+        if (hasFocus) penCanvas.applyRawDrawingSettings()
+
     }
 
     override fun onPause() {
-        ensureCloseRawRendering()
+        penCanvas.ensureCloseRawRendering()
         ensureSave()
-        updateBmpToSurface()
         super.onPause()
     }
 
     override fun onDestroy() {
-        ensureCloseRawRendering()
-        penEngine.close()
+        penCanvas.ensureCloseRawRendering()
+        penCanvas.penEngine.close()
         super.onDestroy()
-    }
-
-    private fun ensureCloseRawRendering() {
-        if (penEngine.isEnabled) {
-            penEngine.isEnabled = false
-        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -208,6 +127,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun withTempNoRawRendering(f: ()->Unit) {
+        val penEngine = penCanvas.penEngine
         val isRawRendering = penEngine.isEnabled
         if (isRawRendering)
         {
@@ -224,9 +144,9 @@ class MainActivity : AppCompatActivity() {
         when(item.itemId) {
             R.id.action_clear -> {
                 withTempNoRawRendering {
-                    clearSurfaceView()
                     backend.clear()
-                    penEngine.clear()
+                    penCanvas.invalidate()
+                    penCanvas.penEngine.clear()
                     doSave()
                 }
                 isDirty = false
