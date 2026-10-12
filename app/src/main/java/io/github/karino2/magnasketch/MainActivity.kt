@@ -3,17 +3,11 @@ package io.github.karino2.magnasketch
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Rect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Menu
 import android.view.MenuItem
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ShareCompat
@@ -22,7 +16,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.karino2.supernote.BitmapBackend
 import io.github.karino2.supernote.SupernotePenCanvas
-import io.github.karino2.supernote.SupernotePenEngine
 import java.io.File
 import java.io.FileNotFoundException
 
@@ -101,7 +94,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         penCanvas.ensureCloseRawRendering()
-        penCanvas.penEngine.close()
+        penCanvas.einkPW.close()
         super.onDestroy()
     }
 
@@ -121,22 +114,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun doSave() {
         openFileOutput(fileName, MODE_PRIVATE).use {
-            backend.bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            backend.withLock { backend.bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
             it.flush()
         }
     }
 
     fun withTempNoRawRendering(f: ()->Unit) {
-        val penEngine = penCanvas.penEngine
-        val isRawRendering = penEngine.isEnabled
+        val eink = penCanvas.einkPW
+        val isRawRendering = eink.isEnabled
         if (isRawRendering)
         {
-            penEngine.isEnabled = false
+            eink.close()
         }
         f()
         if (isRawRendering)
         {
-            penEngine.isEnabled = true
+            eink.open()
         }
     }
 
@@ -146,7 +139,7 @@ class MainActivity : AppCompatActivity() {
                 withTempNoRawRendering {
                     backend.clear()
                     penCanvas.invalidate()
-                    penCanvas.penEngine.clear()
+                    penCanvas.einkPW.clear()
                     doSave()
                 }
                 isDirty = false

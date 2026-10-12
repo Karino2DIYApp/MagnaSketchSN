@@ -14,15 +14,13 @@ class SupernotePenCanvas(context: Context, attributeSet: AttributeSet) : View(co
     val backend by lazy { BitmapBackend(width, height) }
     var isBackendDirty = false
 
-    val penEngine by lazy {
-        SupernotePenEngine(
-            this,
-            SupernotePenEngine.Listener { b, r -> onHardwareStrokeFinished(b, r) })
+    val einkPW by lazy {
+        EinkPixelWriter(this, ::onHardwareStrokeFinished)
     }
 
     fun onHardwareStrokeFinished(bitmap: Bitmap, dirty: Rect) {
-        backend.canvas.drawBitmap(bitmap, dirty, dirty, null)
-        penEngine.clearTransient(dirty)
+        backend.drawBitmap(bitmap, dirty, dirty)
+        einkPW.clearTransient(dirty)
         isBackendDirty = true
     }
 
@@ -44,37 +42,40 @@ class SupernotePenCanvas(context: Context, attributeSet: AttributeSet) : View(co
             ensureCloseRawRendering()
         }
 
-        if (!penEngine.isEnabled) {
-            penEngine.isEnabled = true
-            penEngine.setTool(SupernotePenEngine.TOOL_PENCIL, Color.BLACK)
-            penEngine.setBitmapVisible(true)
-            penEngine.setWritableRect(limit)
+        if (!einkPW.isEnabled) {
+            einkPW.open()
+            einkPW.setPen(PenType.PENCIL, 4, Color.BLACK)
+            einkPW.setWritableRect(limit)
             lastOpenedLimit = Rect(limit)
 
-            penEngine.loadBitmap(backend.bitmap.copy(Bitmap.Config.ARGB_8888, true))
+            backend.withLock {
+                einkPW.loadBitmap(backend.bitmap)
+            }
         } else {
-            penEngine.setWritableRect(limit)
+            einkPW.setWritableRect(limit)
         }
     }
 
     fun ensureCloseRawRendering() {
-        if (penEngine.isEnabled) {
-            penEngine.isEnabled = false
+        if (einkPW.isEnabled) {
+            einkPW.isEnabled = false
         }
     }
 
 
     private fun isRawRenderingBecomesStale(limit: Rect): Boolean =
-        penEngine.isEnabled && (lastOpenedLimit == null || limit.width() != lastOpenedLimit?.width() || limit.height() != lastOpenedLimit?.height())
+        einkPW.isEnabled && (lastOpenedLimit == null || limit.width() != lastOpenedLimit?.width() || limit.height() != lastOpenedLimit?.height())
 
     @SuppressLint("ClickableViewAccessibility")
-    override fun onTouchEvent(event: MotionEvent?): Boolean {
-        penEngine.forwardEvent(event)
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        einkPW.forwardEvent(event)
         return true
     }
 
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawBitmap(backend.bitmap, 0f, 0f, null);
+        backend.withLock {
+            canvas.drawBitmap(backend.bitmap, 0f, 0f, null);
+        }
     }
 }
