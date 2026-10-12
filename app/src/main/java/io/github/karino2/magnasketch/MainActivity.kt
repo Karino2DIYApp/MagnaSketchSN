@@ -33,9 +33,6 @@ class MainActivity : AppCompatActivity() {
             penCanvas.isBackendDirty = value
         }
 
-    val handler = Handler(Looper.myLooper()!!)
-
-
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,33 +54,27 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        handler.post {
-            // サイズが決まった後に呼びたいのだが、面倒なのでhandler.postで。
-            try
-            {
-                openFileInput(fileName).use {
-                    BitmapFactory.decodeStream(it)
-                }?.let {
-                    penCanvas.backend.drawBitmap(it)
-                    penCanvas.invalidate()
-                }
-            }catch(ignore: FileNotFoundException) {
+        try
+        {
+            openFileInput(fileName).use {
+                BitmapFactory.decodeStream(it)
+            }?.let {
+                penCanvas.initialBmp = it
             }
-
-            penCanvas.applyRawDrawingSettings()
+        }catch(ignore: FileNotFoundException) {
         }
 
+        penCanvas.requestRawDrawing()
     }
 
     override fun onResume() {
         super.onResume()
-        penCanvas.applyRawDrawingSettings()
+        penCanvas.requestRawDrawing()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) penCanvas.applyRawDrawingSettings()
-
+        if (hasFocus) penCanvas.requestRawDrawing()
     }
 
     override fun onPause() {

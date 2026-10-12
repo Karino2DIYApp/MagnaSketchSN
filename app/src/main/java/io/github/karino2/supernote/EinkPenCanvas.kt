@@ -34,7 +34,7 @@ class EinkPenCanvas(context: Context, attributeSet: AttributeSet) : View(context
 
     private var lastOpenedLimit: Rect? = null
 
-    fun applyRawDrawingSettings() {
+    private fun applyRawDrawingSettings() {
         val limit = visibleRect()
         if (limit.width() <= 0 || limit.height() <= 0) return
 
@@ -61,6 +61,36 @@ class EinkPenCanvas(context: Context, attributeSet: AttributeSet) : View(context
         if (einkPW.isEnabled) {
             einkPW.isEnabled = false
         }
+        _requestRawDrawingPending = false
+    }
+
+    var initialBmp: Bitmap? = null
+    private var _requestRawDrawingPending = false
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        backend.resize(w, h)
+        if (w != 0 && h != 0) {
+            initialBmp?.let {
+                backend.drawBitmap(it)
+            }
+            initialBmp = null
+        }
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (_requestRawDrawingPending)
+        {
+            _requestRawDrawingPending = false
+            applyRawDrawingSettings()
+        }
+    }
+
+    fun requestRawDrawing() {
+        if (width != 0 && height != 0)
+        {
+            applyRawDrawingSettings()
+            _requestRawDrawingPending = false
+        } else {
+            _requestRawDrawingPending = true
+        }
     }
 
 
@@ -69,6 +99,10 @@ class EinkPenCanvas(context: Context, attributeSet: AttributeSet) : View(context
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        // タッチは無視。スタイラスオンリー
+        if (event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER)
+            return super.onTouchEvent(event)
+        
         einkPW.forwardEvent(event)
         return true
     }
