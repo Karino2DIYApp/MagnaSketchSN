@@ -10,7 +10,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 
-class SupernotePenCanvas(context: Context, attributeSet: AttributeSet) : View(context, attributeSet) {
+class EinkPenCanvas(context: Context, attributeSet: AttributeSet) : View(context, attributeSet) {
     val backend by lazy { BitmapBackend(width, height) }
     var isBackendDirty = false
 
@@ -20,6 +20,7 @@ class SupernotePenCanvas(context: Context, attributeSet: AttributeSet) : View(co
 
     fun onHardwareStrokeFinished(bitmap: Bitmap, dirty: Rect) {
         backend.drawBitmap(bitmap, dirty, dirty)
+        // これが無いとrefreshした時にクリアされたバックエンドのバッファで上書きされてしまう。
         einkPW.clearTransient(dirty)
         isBackendDirty = true
     }

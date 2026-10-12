@@ -15,14 +15,14 @@ import androidx.core.content.FileProvider
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import io.github.karino2.supernote.BitmapBackend
-import io.github.karino2.supernote.SupernotePenCanvas
+import io.github.karino2.supernote.EinkPenCanvas
 import java.io.File
 import java.io.FileNotFoundException
 
 
 class MainActivity : AppCompatActivity() {
 
-    val penCanvas by lazy { findViewById<SupernotePenCanvas>(R.id.canvas)}
+    val penCanvas by lazy { findViewById<EinkPenCanvas>(R.id.canvas)}
 
     val backend :BitmapBackend
         get() = penCanvas.backend
