@@ -1,5 +1,9 @@
-# Toy magnetic drawing board like app for BOOX
+# Toy magnetic drawing board like app for Supernote
 
-Use BOOX raw rendering, so this app only works for BOOX, newer than Android 10 (I've checked BOOX Note3).
+This app use Supernote hardware stylus rendering(PW), so this app only works for Supernote, I've tested on Manta.
 
-![screencast](https://raw.githubusercontent.com/karino2/MagnaSketch/refs/heads/main/misc/MagnaSketchDemo.gif)
+![screencast](https://raw.githubusercontent.com/karino2/MagnaSketchSN/refs/heads/main/misc/MagnaSketchDemoSN.gif)
+
+## Download
+
+APK is at [Releases](https://github.com/Karino2DIYApp/MagnaSketchSN/releases) page.
