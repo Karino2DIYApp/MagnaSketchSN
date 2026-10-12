@@ -102,7 +102,7 @@ class EinkPenCanvas(context: Context, attributeSet: AttributeSet) : View(context
         // タッチは無視。スタイラスオンリー
         if (event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER)
             return super.onTouchEvent(event)
-        
+
         einkPW.forwardEvent(event)
         return true
     }
